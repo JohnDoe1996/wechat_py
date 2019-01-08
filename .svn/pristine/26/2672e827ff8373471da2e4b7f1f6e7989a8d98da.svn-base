@@ -1,0 +1,385 @@
+# -*- coding: utf-8 -*-
+import re
+import urllib2
+import urllib
+import cookielib
+from bs4 import BeautifulSoup
+
+#cookie='' #设置全局变量保存cookit，方便在各个类和函数中调用相同的Coolit
+
+def catchUrl(str,cookie):
+    #爬url
+    MAIN_URL = "http://class.sise.com.cn:7001/sise/module/student_states/student_select_class/main.jsp"
+    main_html = pocook(MAIN_URL,cookie)
+    soup = BeautifulSoup(main_html,"html.parser")
+    tr = soup.find("tr",attrs={"title":str})
+    td = tr.find_all('td', attrs={"align": "center"})
+    url = td[0].get('onclick').split("'")[1].split("'")[0]
+    url = url.replace('../../../../../', 'http://class.sise.com.cn:7001/')
+    return url
+
+
+def pocook(url,cookie):
+    #global cookie
+    #cookie_filename = 'cookie.txt'
+    #cookie = cookielib.MozillaCookieJar(cookie_filename)
+    #cookie.load(cookie_filename, ignore_discard=True, ignore_expires=True)
+    # print cookie
+    #以上是从cookit.txt提取文件的代码
+    handler = urllib2.HTTPCookieProcessor(cookie)
+    opener = urllib2.build_opener(handler)
+    get_request = urllib2.Request(url)  # 利用cookie请求访问另一个网址
+    get_response = opener.open(get_request)
+    html = get_response.read().decode('gbk')
+    return html
+
+class login:
+    # 登录mysise
+    INDEX_URL = 'http://class.sise.com.cn:7001/sise/'  # 登录界面的网址
+    LOGIN_URL = 'http://class.sise.com.cn:7001/sise/login_check_login.jsp'  # 登录表单发送的网址
+
+    def __init__(self, username, password):
+        # 构造函数，用两个私有权限的变量接收账号密码
+        self.__uasename = username
+        self.__password = password
+
+    def getHidden(self):
+        # 获取登录界面中表单的随机隐藏信息，提高登录的通用性
+        # 返回 （hiddenNmae,hiddenValue,randomValue)
+        get_request = urllib2.urlopen(self.INDEX_URL)
+        requestIndex = get_request.read().decode('gbk')
+        hiddenRE = '<input type="hidden" name=".*?"  value=".*?">'
+        randomRE = '<input id="random"   type="hidden"  value=".*?"  name="random" />'
+        hid = re.findall(hiddenRE, requestIndex)
+        ran = re.findall(randomRE, requestIndex)
+        hiddenNmae = hid[0].split('name="')[1].split('"')[0]
+        hiddenValue = hid[0].split('value="')[1].split('"')[0]
+        randomValue = ran[0].split('value="')[1].split('"')[0]
+        return hiddenNmae, hiddenValue, randomValue
+
+    def subment(self):
+        # 提交登录表单，
+        hiddenNmae, hiddenValue, randomValue = self.getHidden();
+        values = {hiddenNmae: hiddenValue, 'random': randomValue, 'username': self.__uasename,
+                  'password': self.__password}  # 用字典保存要提交的表单
+        postdate = urllib.urlencode(values).encode('gbk')
+        user_agent = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 UBrowser/6.2.3637.220 Safari/537.36'
+        headers = {'User-Agent': user_agent, 'Connection': 'keep-alive'}
+        #cookie_filename = 'cookie.txt'
+        #cookie = cookielib.MozillaCookieJar(cookie_filename)  # CooKie信息保存到txt
+        #global cookie
+        cookie = cookielib.CookieJar()                         #Cookie信息保存到全局变量
+        handler = urllib2.HTTPCookieProcessor(cookie)
+        opener = urllib2.build_opener(handler)
+        request = urllib2.Request(self.LOGIN_URL, postdate, headers)
+        try:
+            response = opener.open(request)
+            page = response.read().decode('gbk')
+        except urllib2.error.URLError as e:
+            print e.code, ':', e.reason
+        #cookie.save(ignore_discard=True, ignore_expires=True)  # 保存cookie到cookie.txt中
+        return cookie
+
+
+class schedule:
+    # 爬去课程表
+    SCHEDULE_URL = 'http://class.sise.com.cn:7001/sise/module/student_schedular/student_schedular.jsp'  # 课程表网址
+    lit = []
+
+    def __init__(self,cookie):
+        self.html = pocook(self.SCHEDULE_URL, cookie)
+        self.lit.append([u'时间', u'星期一', u'星期二', u'星期三', u'星期四', u'星期五', u'星期六', u'星期日'])
+        #最后的空格是为了组成长:宽=1:1的数组，方便后面的旋转算法
+        self.parsePage()
+        self.toLits()
+
+    def parsePage(self):
+        #进行关键信息提取
+        try:
+            relink = "<td width='10%' align='left' valign='top' class='font12'>.*?</td>"
+            tilink = "<td width='10%' align='center' valign='top' class='font12'>.*?</td>"
+            tlt = re.findall(tilink, self.html)
+            s = len(tlt)
+            plt = re.findall(relink, self.html)
+            l = len(plt)
+            l = l // 7
+            for i in range(l):
+                j = i * 7
+                time = tlt[i].split("'>")[1].split("</")[0].replace('<br>', '').replace('&nbsp;', '').replace(' ', '')
+                mon = plt[j].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                tue = plt[j + 1].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                wed = plt[j + 2].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                thu = plt[j + 3].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                fri = plt[j + 4].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                sat = plt[j + 5].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                sun = plt[j + 6].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                self.lit.append([time, mon, tue, wed, thu, fri, sat, sun])
+
+        except:
+            return ''
+
+    def toLits(self):
+        self.week = []
+        lit = []
+        for i in range(8):  # 二维数组横变竖
+            temp = []
+            for j in range(9):
+                temp.append(self.lit[j][i])
+            lit.append(temp)
+        for i in range(1, 6):
+            str = ""
+            for j in range(9):
+                if lit[i][j].strip():
+                    if j != 0:
+                        str = str + lit[0][j]
+                    str = str + lit[i][j] + "\n"
+            self.week.append(str.encode("utf-8"))
+
+    def getText(self,n):
+        return self.week[n-1]
+
+
+class checking:
+    # 爬取考勤信息
+    def __init__(self,cookie):
+        self.CHECKING_URL = catchUrl("考勤",cookie)
+        self.html = pocook(self.CHECKING_URL,cookie)
+        self.parsePage()
+        self.toString()
+
+    def parsePage(self):
+        # 进行关键信息提取
+        try:
+            self.html = self.html.replace("even", "odd")
+            soup = BeautifulSoup(self.html, "html.parser")
+            tr = soup.find_all('tr', attrs={'class': 'odd'})
+            # print(tr)
+            self.lit = []
+            for i in range(len(tr)):
+                td = tr[i].find_all('td', attrs={"align": "center"})
+                for j in range(len(td)):
+                    td[j] = td[j].get_text()
+                self.lit.append(td)
+        except:
+            return ''
+
+    def toString(self):
+        self.str=""
+        for i in range(len(self.lit)):
+            for j in range(1, 3):
+                if self.lit[i][j].strip():
+                    self.str = self.str + self.lit[i][j].encode("utf-8") + ' '
+                else:
+                    self.str = self.str + "全勤"+" "
+                if j==2:
+                    self.str = self.str + "\n"
+
+    def getText(self):
+        return self.str
+
+
+class late:
+    def __init__(self,cookie):
+        self.OPEN_URL = catchUrl("晚归、违规用电记录",cookie)
+        self.html = pocook(self.OPEN_URL,cookie)
+        self.parsePage()
+        self.toString()
+
+    def parsePage(self):
+        self.html = self.html.replace("even", "odd")
+        soup = BeautifulSoup(self.html, "html.parser")
+        table = soup.find_all("table",attrs={"width":"95%","class":"table","align":"center"})
+        tr= table[0].find_all("tr",attrs={"class":"odd"})
+        td = tr[0].find_all("td",attrs={})
+        self.lit = []
+        n=0
+        for i in range(int(len(td)/8)):
+            temp = []
+            for j in range(8):
+                temp.append(td[n].get_text())
+                n=n+1
+            self.lit.append(temp)
+
+    def toString(self):
+        self.str=''
+        for i in range(len(self.lit)):
+            for j in range(len(self.lit[i])):
+                self.str += self.lit[i][j] + " "
+            self.str += "\n"
+
+    def getText(self):
+        return self.str
+
+class test:
+    def __init__(self,cookie):
+        self.OPEN_URL = catchUrl("考试时间查看",cookie)
+        self.html = pocook(self.OPEN_URL,cookie)
+        self.parsePage()
+        self.toString()
+
+    def parsePage(self):
+        self.html = self.html.replace("even", "odd")
+        soup = BeautifulSoup(self.html, "html.parser")
+        table = soup.find_all("table", attrs={"width": "90%", "class": "table", "cellspacing": "1"})
+        tr = table[0].find_all("tr", attrs={"class": "odd"})
+
+        tdLit = []
+        for i in range(len(tr)):
+            tdLit.append(tr[i].find_all("td", attrs={}))
+        self.lit = []
+        for i in range(len(tdLit)):
+            temp = []
+            for j in range(8):
+                temp.append(tdLit[i][j].get_text().encode("utf-8"))
+            self.lit.append(temp)
+
+    def toString(self):
+        self.str=""
+        for i in range(len(self.lit)):
+            self.str += "课程名称：" + self.lit[i][1] + "(" + self.lit[i][0] + ")\n"
+            self.str += "考试时间：" + self.lit[i][2] +"  "+ self.lit[i][3] + "\n"
+            self.str += "考场：" + self.lit[i][4]
+            self.str += "    座位：" + self.lit[i][6]
+            self.str += "    状态：" + self.lit[i][7] + "\n\n"
+
+    def getText(self):
+        return self.str
+
+
+class personal:
+    # 爬取考勤信息（必修课程，选修课程，成绩，绩点）
+    xueqi = "2016年第二学期"
+
+    def __init__(self,cookie):
+        self.PERSONAL_URL = catchUrl("个人信息查询",cookie)
+        self.html = pocook(self.PERSONAL_URL,cookie)
+        self.parsePage()
+        self.catchInformation()
+        self.catchGPA()
+        self.toStringInformation()
+        self.toStringObligatoryCode()
+        self.toStringElectivesCode()
+
+    def parsePage(self):
+        # 进行关键信息提取
+        try:
+            self.html = self.html.replace("even", "odd")
+            soup = BeautifulSoup(self.html, "html.parser")
+            tr = soup.find_all('tr', attrs={'class': 'odd'})
+            # print tr
+            self.lit = []  # 全部课程的列表
+            self.litObligatory = []  # 必修课程的列表
+            self.litElectives = []  # 选修课程的列表
+            temp = ""
+            for i in range(len(tr)):
+                td = tr[i].find_all('td')
+                for j in range(len(td)):
+                    td[j] = td[j].get_text()
+                self.lit.append(td)
+                if len(td) == 10:  # 必修课多了学期信息所以长度是10
+                    if td[0].strip():  # 如果学期显示不为空，把学期提取出来
+                        temp = td[0];
+                    else:
+                        td[0] = temp  # 如果学期显示为空，把之前提取的学期填充进去
+                    self.litObligatory.append(td)
+                elif len(td) == 9:  # 选修只有9项信息
+                    self.litElectives.append(td)
+            return self.lit
+        except:
+            return ''
+
+    def catchInformation(self):
+        # 爬取个人信息
+        self.html = self.html.replace("&nbsp;", " ")
+        soup = BeautifulSoup(self.html, "html.parser")
+        tableDir = {"width": "100%", "border": "0", "cellspacing": "2", "cellpadding": "0", "align": "left"}
+        table = soup.find('table', attrs=tableDir)
+        span = table.find_all("span", attrs={"class": "font12"})
+        td = table.find_all("td", attrs={"height": "16", "class": "td_left"})
+        self.information = {}
+        j = 0
+        for i in range(len(td)):
+            temp = td[i].get_text().replace("\r", "").replace("\n", "").replace("\t", "")
+            if not temp.strip():
+                continue
+            self.information[span[j].get_text()] = temp
+            j = j + 1
+        return self.information
+
+    def toStringObligatoryCode(self):
+        self.strObligatoryCode = self.xueqi + "\n"
+        self.strObligatoryCode += " 必修\n"
+        self.strObligatoryCode += "课程代码  课程名称\n"
+        for i in self.litObligatory:
+            if(self.xueqi == i[7].encode("utf-8")):
+                self.strObligatoryCode += i[1].encode("utf-8") + "    " + i[2].encode("utf-8") + "\n"
+
+    def toStringElectivesCode(self):
+        self.strElectivesCode = "\n 选修\n"
+        self.strElectivesCode += "课程代码  课程名称\n"
+        for i in self.litElectives:
+            if (self.xueqi == i[6].encode("utf-8")):
+                self.strElectivesCode += i[0].encode("utf-8") + "    " + i[1].encode("utf-8") + "\n"
+
+    def getTextCode(self):
+        return self.strObligatoryCode + self.strElectivesCode
+
+    def catchGPA(self):
+        # 抓取绩点（必修先运行该方法），参数是是否打印到控制台
+        try:
+            soup = BeautifulSoup(self.html, "html.parser")
+            font = soup.find_all('font', attrs={"color": "#FF0000"})
+            self.GPA = font[-1].get_text()
+            return self.GPA
+        except:
+            return ''
+
+    def printObligatory(self, item=True):
+        # 打印必修课程，item默认True是带标题，其他为不带标题
+        if item == True:
+            print "必修"
+        for i in self.litObligatory:
+            print i
+
+    def printElectives(self, item=True):
+        # 打印选修课程，item默认True是带标题，其他为不带标题
+        if item == True:
+            print "选修"
+        for i in self.litElectives:
+            print i
+
+    def toStringInformation(self):
+        # 打印个人信息字典
+        self.strInformation=''
+        for key in self.information:
+            self.strInformation +=  key + ": " +self.information[key] + "\n"
+
+    def getTextInformation(self):
+        return self.strInformation
+
+    def printGrade(self):
+        # 打印成绩
+        print "======必修======="
+        for i in self.litObligatory:
+            for j in range(1, 4):
+                print i[j],
+            print i[-3] + " " + i[-2]
+        print "=======选修======="
+        for i in self.litElectives:
+            for j in range(3):
+                print i[j],
+            print i[-3] + " " + i[-2]
+
+    def printGPA(self):
+        # 打印绩点
+        print "当前绩点：", self.catchGPA()
+
+    def ItemGrade(self, year, item):
+        # 打印某个学期的成绩，参数为年份和学期
+        # TODO:
+        pass
+
+    def thisItemGrade(self):
+        # 打印当前学期的成绩
+        # TODO:
+        pass

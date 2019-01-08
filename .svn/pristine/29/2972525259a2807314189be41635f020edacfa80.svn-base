@@ -1,0 +1,138 @@
+# -*- coding: utf-8 -*-
+import re
+import urllib2
+import urllib
+import cookielib
+from bs4 import BeautifulSoup
+
+#cookie='' #设置全局变量保存cookit，方便在各个类和函数中调用相同的Coolit
+
+def catchUrl(str):
+    #爬url
+    MAIN_URL = "http://class.sise.com.cn:7001/sise/module/student_states/student_select_class/main.jsp"
+    main_html = pocook(MAIN_URL)
+    soup = BeautifulSoup(main_html,"html.parser")
+    tr = soup.find("tr",attrs={"title":str})
+    td = tr.find_all('td', attrs={"align": "center"})
+    url = td[0].get('onclick').split("'")[1].split("'")[0]
+    url = url.replace('../../../../../', 'http://class.sise.com.cn:7001/')
+    return url
+
+
+def pocook(url,cookie):
+    #global cookie
+    #cookie_filename = 'cookie.txt'
+    #cookie = cookielib.MozillaCookieJar(cookie_filename)
+    #cookie.load(cookie_filename, ignore_discard=True, ignore_expires=True)
+    # print cookie
+    #以上是从cookit.txt提取文件的代码
+    handler = urllib2.HTTPCookieProcessor(cookie)
+    opener = urllib2.build_opener(handler)
+    get_request = urllib2.Request(url)  # 利用cookie请求访问另一个网址
+    get_response = opener.open(get_request)
+    html = get_response.read().decode('gbk')
+    return html
+
+class login:
+    # 登录mysise
+    INDEX_URL = 'http://class.sise.com.cn:7001/sise/'  # 登录界面的网址
+    LOGIN_URL = 'http://class.sise.com.cn:7001/sise/login_check_login.jsp'  # 登录表单发送的网址
+
+    def __init__(self, username, password):
+        # 构造函数，用两个私有权限的变量接收账号密码
+        self.__uasename = username
+        self.__password = password
+
+    def getHidden(self):
+        # 获取登录界面中表单的随机隐藏信息，提高登录的通用性
+        # 返回 （hiddenNmae,hiddenValue,randomValue)
+        get_request = urllib2.urlopen(self.INDEX_URL)
+        requestIndex = get_request.read().decode('gbk')
+        hiddenRE = '<input type="hidden" name=".*?"  value=".*?">'
+        randomRE = '<input id="random"   type="hidden"  value=".*?"  name="random" />'
+        hid = re.findall(hiddenRE, requestIndex)
+        ran = re.findall(randomRE, requestIndex)
+        hiddenNmae = hid[0].split('name="')[1].split('"')[0]
+        hiddenValue = hid[0].split('value="')[1].split('"')[0]
+        randomValue = ran[0].split('value="')[1].split('"')[0]
+        return hiddenNmae, hiddenValue, randomValue
+
+    def subment(self):
+        # 提交登录表单，
+        hiddenNmae, hiddenValue, randomValue = self.getHidden();
+        values = {hiddenNmae: hiddenValue, 'random': randomValue, 'username': self.__uasename,
+                  'password': self.__password}  # 用字典保存要提交的表单
+        postdate = urllib.urlencode(values).encode('gbk')
+        user_agent = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 UBrowser/6.2.3637.220 Safari/537.36'
+        headers = {'User-Agent': user_agent, 'Connection': 'keep-alive'}
+        #cookie_filename = 'cookie.txt'
+        #cookie = cookielib.MozillaCookieJar(cookie_filename)  # CooKie信息保存到txt
+        #global cookie
+        cookie = cookielib.CookieJar()                         #Cookie信息保存到全局变量
+        handler = urllib2.HTTPCookieProcessor(cookie)
+        opener = urllib2.build_opener(handler)
+        request = urllib2.Request(self.LOGIN_URL, postdate, headers)
+        try:
+            response = opener.open(request)
+            page = response.read().decode('gbk')
+        except urllib2.error.URLError as e:
+            print e.code, ':', e.reason
+        #cookie.save(ignore_discard=True, ignore_expires=True)  # 保存cookie到cookie.txt中
+        return cookie
+
+
+class schedule:
+    # 爬去课程表
+    SCHEDULE_URL = 'http://class.sise.com.cn:7001/sise/module/student_schedular/student_schedular.jsp'  # 课程表网址
+    lit = []
+
+    def __init__(self,cookie):
+        self.html = pocook(self.SCHEDULE_URL, cookie)
+        self.lit.append([u'时间', u'星期一', u'星期二', u'星期三', u'星期四', u'星期五', u'星期六', u'星期日',u''])
+        #最后的空格是为了组成长:宽=1:1的数组，方便后面的旋转算法
+        self.parsePage()
+
+    def parsePage(self):
+        #进行关键信息提取
+        try:
+            relink = "<td width='10%' align='left' valign='top' class='font12'>.*?</td>"
+            tilink = "<td width='10%' align='center' valign='top' class='font12'>.*?</td>"
+            tlt = re.findall(tilink, self.html)
+            s = len(tlt)
+            plt = re.findall(relink, self.html)
+            l = len(plt)
+            l = l // 7
+            for i in range(l):
+                j = i * 7
+                time = tlt[i].split("'>")[1].split("</")[0].replace('<br>', '').replace('&nbsp;', '').replace(' ', '')
+                mon = plt[j].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                tue = plt[j + 1].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                wed = plt[j + 2].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                thu = plt[j + 3].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                fri = plt[j + 4].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                sat = plt[j + 5].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                sun = plt[j + 6].split("'>")[1].split("<")[0].replace('&nbsp;', ' ')
+                self.lit.append([time, mon, tue, wed, thu, fri, sat, sun,''])
+
+        except:
+            return ''
+
+    def getText(self,n):
+        #打印数据到控制台
+        str = ""
+        lit = self.lit  # 创建临时数组改变内容时防止破坏原数组
+
+        try:
+            for i in range(9):  # 二维数组横变竖
+                for j in range(i + 1, 9):
+                    lit[i][j], lit[j][i] = lit[j][i], lit[i][j]
+        except:
+            pass
+
+        for i in range(n, n+1):
+            for j in range(0, 9):
+                if lit[i][j].strip():
+                    if j != 0:
+                        str = str + lit[0][j]
+                    str = str + lit[i][j] + "\n"
+        return str.encode("utf-8")
